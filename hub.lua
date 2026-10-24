@@ -1,270 +1,55 @@
-
-
-
---// TRAINING HUB | Standalone UI
---// Features: draggable menu, RightShift toggle,
---// adjustable FOV circle, visual settings.
---// Intended for a Roblox experience you control.
-
+-- Xeno Client-Side Visual Monitoring Script
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-
-local old = playerGui:FindFirstChild("TrainingHub")
-if old then old:Destroy() end
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "TrainingHub"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.Parent = playerGui
-
--- Global (UserInputService) connections outlive the GUI, so track them
--- and disconnect them whenever the GUI is destroyed (X button or re-run).
-local connections = {}
-
-local function track(connection)
-    table.insert(connections, connection)
-    return connection
+-- Clean up any previous trackers to avoid lag
+for _, oldObj in ipairs(workspace:GetDescendants()) do
+    if oldObj.Name == "XenoESPTracker" then
+        oldObj:Destroy()
+    end
 end
 
-gui.Destroying:Connect(function()
-    for _, connection in ipairs(connections) do
-        connection:Disconnect()
+-- Function to handle local tracking visuals
+local function createESP(player)
+    if player == LocalPlayer then return end
+
+    local function applyVisuals(character)
+        -- Wait for character parts to load safely
+        local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+        if not rootPart then return end
+        
+        -- Remove old tracker instance if it exists
+        if character:FindFirstChild("XenoESPTracker") then
+            character.XenoESPTracker:Destroy()
+        end
+
+        -- Create Client-Side Highlight object
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "XenoESPTracker"
+        highlight.FillColor = Color3.fromRGB(255, 30, 30) -- Bright Red for opponents
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255) -- White border
+        highlight.FillTransparency = 0.4
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- Force render through walls
+        
+        highlight.Parent = character
     end
-    table.clear(connections)
-end)
 
-local theme = {
-    background = Color3.fromRGB(22, 26, 34),
-    panel = Color3.fromRGB(37, 43, 55),
-    accent = Color3.fromRGB(70, 170, 240),
-    enabled = Color3.fromRGB(38, 125, 90),
-    text = Color3.fromRGB(240, 243, 250),
-    muted = Color3.fromRGB(160, 175, 195)
-}
-
-local window = Instance.new("Frame")
-window.Name = "Main"
-window.Size = UDim2.fromOffset(300, 365)
-window.Position = UDim2.new(0, 30, 0.25, 0)
-window.BackgroundColor3 = theme.background
-window.BorderSizePixel = 0
-window.Active = true -- stop clicks on the menu passing through to the game
-window.Parent = gui
-
-Instance.new("UICorner", window).CornerRadius =
-    UDim.new(0, 10)
-
-local outline = Instance.new("UIStroke")
-outline.Color = theme.accent
-outline.Transparency = 0.45
-outline.Thickness = 1
-outline.Parent = window
-
-local header = Instance.new("TextLabel")
-header.Size = UDim2.new(1, -50, 0, 46)
-header.Position = UDim2.fromOffset(14, 0)
-header.BackgroundTransparency = 1
-header.Text = "TRAINING HUB"
-header.TextColor3 = theme.accent
-header.Font = Enum.Font.GothamBold
-header.TextSize = 17
-header.TextXAlignment = Enum.TextXAlignment.Left
-header.Parent = window
-
-local close = Instance.new("TextButton")
-close.Size = UDim2.fromOffset(30, 30)
-close.Position = UDim2.new(1, -39, 0, 8)
-close.BackgroundColor3 = Color3.fromRGB(150, 55, 65)
-close.Text = "X"
-close.TextColor3 = theme.text
-close.Font = Enum.Font.GothamBold
-close.TextSize = 14
-close.Parent = window
-Instance.new("UICorner", close).CornerRadius =
-    UDim.new(0, 6)
-
-close.Activated:Connect(function()
-    gui:Destroy()
-end)
-
--- Draggable window
-local dragging = false
-local dragInput
-local dragStart
-local startPosition
-
-header.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPosition = window.Position
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+    if player.Character then
+        task.spawn(applyVisuals, player.Character)
     end
-end)
-
-header.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
-track(UIS.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then
-        local delta = input.Position - dragStart
-        window.Position = UDim2.new(
-            startPosition.X.Scale,
-            startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale,
-            startPosition.Y.Offset + delta.Y
-        )
-    end
-end))
-
--- FOV circle
-local circle = Instance.new("Frame")
-circle.Name = "PracticeFOV"
-circle.AnchorPoint = Vector2.new(0.5, 0.5)
-circle.Position = UDim2.fromScale(0.5, 0.5)
-circle.Size = UDim2.fromOffset(180, 180)
-circle.BackgroundTransparency = 1
-circle.Visible = false
-circle.Parent = gui
-
-Instance.new("UICorner", circle).CornerRadius =
-    UDim.new(1, 0)
-
-local circleStroke = Instance.new("UIStroke")
-circleStroke.Color = theme.accent
-circleStroke.Thickness = 2
-circleStroke.Parent = circle
-
-local function makeButton(label, y, callback)
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -24, 0, 38)
-    button.Position = UDim2.fromOffset(12, y)
-    button.BackgroundColor3 = theme.panel
-    button.TextColor3 = theme.text
-    button.Font = Enum.Font.GothamMedium
-    button.TextSize = 13
-    button.Text = label .. "  [OFF]"
-    button.AutoButtonColor = true
-    button.Parent = window
-
-    Instance.new("UICorner", button).CornerRadius =
-        UDim.new(0, 7)
-
-    local enabled = false
-
-    button.Activated:Connect(function()
-        enabled = not enabled
-        button.Text = label ..
-            (enabled and "  [ON]" or "  [OFF]")
-        button.BackgroundColor3 = enabled
-            and theme.enabled or theme.panel
-
-        callback(enabled)
-    end)
-
-    return button
+    player.CharacterAdded:Connect(applyVisuals)
 end
 
-makeButton("FOV Circle", 55, function(enabled)
-    circle.Visible = enabled
-end)
+-- Run loop for all active players in the lobby
+for _, player in ipairs(Players:GetPlayers()) do
+    createESP(player)
+end
 
--- Cycle circle size
-local sizes = {120, 180, 240, 320, 400}
-local sizeIndex = 2
+-- Automatically catch new players connecting to the server
+Players.PlayerAdded:Connect(createESP)
 
-local sizeButton = Instance.new("TextButton")
-sizeButton.Size = UDim2.new(1, -24, 0, 36)
-sizeButton.Position = UDim2.fromOffset(12, 100)
-sizeButton.BackgroundColor3 = theme.panel
-sizeButton.TextColor3 = theme.text
-sizeButton.Font = Enum.Font.GothamMedium
-sizeButton.TextSize = 13
-sizeButton.Text = "Circle Size: 180 px"
-sizeButton.Parent = window
 
-Instance.new("UICorner", sizeButton).CornerRadius =
-    UDim.new(0, 7)
 
-sizeButton.Activated:Connect(function()
-    sizeIndex = sizeIndex % #sizes + 1
-    local size = sizes[sizeIndex]
-    circle.Size = UDim2.fromOffset(size, size)
-    sizeButton.Text = "Circle Size: " .. size .. " px"
-end)
 
--- Color cycling
-local colors = {
-    Color3.fromRGB(70, 170, 240),
-    Color3.fromRGB(70, 230, 150),
-    Color3.fromRGB(255, 190, 70),
-    Color3.fromRGB(240, 90, 110),
-    Color3.fromRGB(220, 120, 255)
-}
-local colorIndex = 1
-
-local colorButton = Instance.new("TextButton")
-colorButton.Size = UDim2.new(1, -24, 0, 36)
-colorButton.Position = UDim2.fromOffset(12, 143)
-colorButton.BackgroundColor3 = theme.panel
-colorButton.TextColor3 = theme.text
-colorButton.Font = Enum.Font.GothamMedium
-colorButton.TextSize = 13
-colorButton.Text = "Change Accent Color"
-colorButton.Parent = window
-
-Instance.new("UICorner", colorButton).CornerRadius =
-    UDim.new(0, 7)
-
-colorButton.Activated:Connect(function()
-    colorIndex = colorIndex % #colors + 1
-    theme.accent = colors[colorIndex]
-    outline.Color = theme.accent
-    circleStroke.Color = theme.accent
-    header.TextColor3 = theme.accent
-end)
-
--- UI scale toggle
-makeButton("Compact Mode", 186, function(enabled)
-    window.Size = enabled
-        and UDim2.fromOffset(270, 330)
-        or UDim2.fromOffset(300, 365)
-end)
-
--- Status
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -24, 0, 46)
-status.Position = UDim2.fromOffset(12, 238)
-status.BackgroundTransparency = 1
-status.Text = "Ready | Local visual testing"
-status.TextColor3 = theme.muted
-status.Font = Enum.Font.Gotham
-status.TextSize = 11
-status.TextWrapped = true
-status.Parent = window
-
--- Menu keybind
-track(UIS.InputBegan:Connect(function(input, processed)
-    if processed then return end
-
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        window.Visible = not window.Visible
-    end
-end))
-
-print("Training Hub loaded. Press RightShift to hide/show.")
